@@ -1,6 +1,57 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NODES, NODE, EDGES, BLOCKED_EDGE, edgeKey, findRoutes, directionText, pointAt, pointIsClear } from '../app/navigation.ts';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { BUILDINGS, GALLERY } from '../app/buildings.ts';
+import { buildingNavigation, validateBuilding } from '../app/building-navigation.ts';
+import { playClock, pauseClock, progressAt } from '../app/playback.ts';
+
+test('pause/resume retains progress and excludes all paused wall time',()=>{
+ let c=playClock(null,'gallery/routeA',10000,1000);
+ c=pauseClock(c,3500);assert.equal(progressAt(c,80000),.25);
+ c=playClock(c,'gallery/routeA',10000,90000);assert.equal(progressAt(c,90000),.25);
+ assert.equal(progressAt(c,91000),.35);
+ c=pauseClock(c,91000);c=pauseClock(c,100000);assert.equal(progressAt(c,120000),.35);
+ c=playClock(c,'gallery/routeA',10000,120000);assert.equal(progressAt(c,120500),.4);
+});
+test('new route, explicit reset and replay after completion start at zero',()=>{
+ let c=pauseClock(playClock(null,'a',10000,0),4000);
+ assert.equal(progressAt(playClock(c,'b',10000,8000),8000),0);
+ assert.equal(progressAt(playClock(null,'a',10000,8000),8000),0);
+ c=playClock(null,'a',10000,0);assert.equal(progressAt(c,14000),1);
+ assert.equal(progressAt(playClock(c,'a',10000,14000),14000),0);
+});
+test('all building packages have valid independent endpoints and floor connectors',()=>{
+ assert.equal(BUILDINGS.length,2);
+ for(const b of BUILDINGS){assert.deepEqual(validateBuilding(b),[]);const n=buildingNavigation(b);assert.ok(n.findRoutes(b.entry,b.destination).length);}
+ assert.equal(buildingNavigation(BUILDINGS[1]).findRoutes('entry','exit').length,0);
+ assert.equal(buildingNavigation(GALLERY).findRoutes('f1_010','f3_044').length,0);
+});
+test('generalized gallery routing preserves both outer alternatives and obstacle clearance',()=>{
+ const n=buildingNavigation(GALLERY),routes=n.findRoutes('entry','exit');assert.equal(routes.length,3);assert.equal(routes[0].length,56);
+ assert.ok(routes.some(r=>r.nodes.some(id=>n.NODE[id].x<0)));assert.ok(routes.some(r=>r.nodes.some(id=>n.NODE[id].x>0)));
+ for(const a of GALLERY.nodes)for(const b of GALLERY.pois)for(const r of n.findRoutes(a.id,b.id))for(let i=0;i<=200;i++)assert.ok(pointIsClear(n.pointAt(r.nodes,i/200)));
+});
+test('mall routes connect floors only through modeled ramps, stay loop-free and honor closures',()=>{
+ const b=BUILDINGS[1],n=buildingNavigation(b),keys=new Set(b.edges.map(e=>edgeKey(...e)));
+ for(const from of b.nodes.filter(n=>n.checkpoint!==false))for(const to of b.pois){const routes=n.findRoutes(from.id,to.id);assert.ok(routes.length>=1&&routes.length<=3);for(const r of routes){assert.equal(r.nodes[0],from.id);assert.equal(r.nodes.at(-1),to.id);assert.equal(new Set(r.nodes).size,r.nodes.length);assert.ok(r.length<=Math.min(routes[0].length*1.75,routes[0].length+35)+1e-8);for(let i=1;i<r.nodes.length;i++){const a=r.nodes[i-1],c=r.nodes[i];assert.ok(keys.has(edgeKey(a,c)));if(n.NODE[a].floor!==n.NODE[c].floor)assert.equal(n.connector(a,c).kind,'escalator');}}}
+ const routes=n.findRoutes(b.entry,b.destination,[b.closure.edge]);assert.ok(routes.length);for(const r of routes)for(let i=1;i<r.nodes.length;i++)assert.notEqual(edgeKey(r.nodes[i-1],r.nodes[i]),b.closure.edge);
+});
+test('step-free routing never invents an elevator or crosses the atrium',()=>{
+ const b=BUILDINGS[1],n=buildingNavigation(b);assert.deepEqual(n.findRoutes(b.entry,b.destination,[],true),[]);
+ assert.ok(n.findRoutes(b.entry,'f1_011',[],true).length);
+ const r=n.findRoutes(b.entry,b.destination)[0];assert.equal(n.pointAt(r.nodes,0).y,1);assert.equal(n.pointAt(r.nodes,1).y,14);
+ assert.ok(r.nodes.some(id=>n.NODE[id].floor==='2F'));
+ for(let i=0;i<=500;i++){const p=n.pointAt(r.nodes,i/500);if(p.y>6)assert.ok(Math.hypot(p.x,p.z-22.1)>10);}
+});
+test('downloaded mall is unchanged and every navigation segment matches geometry evidence',()=>{
+ const file=fs.readFileSync(new URL('../public/models/empty-mall.glb',import.meta.url));assert.equal(file.length,3456400);assert.equal(crypto.createHash('sha256').update(file).digest('hex'),'b31ab94bdc69bd71c441fd9b139a1969d2bc5fcd798a8bb3e5cfc430baa2f206');
+ const evidence=JSON.parse(fs.readFileSync(new URL('../public/models/empty-mall-navigation-evidence.json',import.meta.url),'utf8')),b=BUILDINGS[1],n=buildingNavigation(b),covered=new Set();
+ for(const node of evidence.nodes){const actual=n.NODE[node.id];assert.deepEqual([actual.x,actual.y,actual.z],node.xyz);}
+ for(const e of evidence.edges){if(e.kind==='walk'){assert.equal(e.surfaceValidated,true);assert.ok(e.wallClearance>=.35);covered.add(edgeKey(e.from,e.to));}else{const ids=[e.from,e.from+'_via_0',e.from+'_via_1',e.to];ids.forEach((id,i)=>{const p=n.NODE[id];assert.deepEqual([p.x,p.y,p.z],e.polyline[i]);if(i)covered.add(edgeKey(ids[i-1],id));});}}
+ assert.equal(covered.size,b.edges.length);for(const e of b.edges)assert.ok(covered.has(edgeKey(...e)));
+});
 
 test('all available routes use real connected edges and stay inside the model corridors',()=>{
  let checked=0;

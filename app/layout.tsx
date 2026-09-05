@@ -4,7 +4,7 @@ import './digital-night.css';
 
 export const metadata: Metadata = {
   title: '觅径 · 室内导航实验室',
-  description: '在公开展厅模型中体验路线规划、三维预览与路口确认。',
+  description: '选择展厅或三层商场，体验跨楼层路线、三维视频与路口确认。',
 };
 
 export default function RootLayout({
