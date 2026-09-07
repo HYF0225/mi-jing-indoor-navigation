@@ -7,15 +7,18 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { HEADINGS, type Heading } from './navigation';
 import type { Building } from './buildings';
 import { buildingNavigation } from './building-navigation';
-import { playClock, pauseClock, progressAt, type Playback } from './playback';
+import { playClock, pauseClock, progressAt, rateClock, type Playback } from './playback';
+import {createGuide} from './guide-avatar';
+import {routePresentation, type ViewMode, type GuideSettings} from './route-presentation';
 export type ViewerAPI = {
  overview:()=>void; focus:(node:string,heading:Heading)=>void;
+ setView:(mode:ViewMode,node:string,heading:Heading)=>void; setRate:(rate:number)=>void;
  snapshot:(node:string,heading:Heading)=>string;
  play:(nodes:string[])=>void; pause:()=>void; stop:()=>void;
  record:(nodes:string[])=>Promise<{blob:Blob;extension:string}>;
 };
-type Props={building:Building;floor:string;path?:string[];confirmed?:string|null;destination?:string;onReady?:()=>void;onError?:(message:string)=>void;onProgress?:(p:number,playing:boolean)=>void;onPick?:(id:string)=>void};
-type Runtime={scene:THREE.Scene;camera:THREE.PerspectiveCamera;renderer:THREE.WebGLRenderer;controls:OrbitControls;roof:THREE.Mesh|null;paths:THREE.Group;markers:THREE.Group;labels:THREE.Sprite[];mode:'overview'|'inside';animation:{nodes:string[];clock:Playback;last:number;done?:()=>void}|null;recorder:MediaRecorder|null;overview:()=>void;stop:()=>void;focus:(id:string,h:Heading)=>void};
+type Props={building:Building;floor:string;guide:GuideSettings;rate:number;path?:string[];confirmed?:string|null;destination?:string;onReady?:()=>void;onError?:(message:string)=>void;onProgress?:(p:number,playing:boolean)=>void;onPick?:(id:string)=>void};
+type Runtime={scene:THREE.Scene;camera:THREE.PerspectiveCamera;renderer:THREE.WebGLRenderer;controls:OrbitControls;roof:THREE.Mesh|null;paths:THREE.Group;markers:THREE.Group;labels:THREE.Sprite[];guide:ReturnType<typeof createGuide>;mode:ViewMode;animation:{nodes:string[];clock:Playback;last:number;done?:()=>void}|null;recorder:MediaRecorder|null;overview:()=>void;stop:()=>void;focus:(id:string,h:Heading)=>void};
 const GalleryViewer=forwardRef<ViewerAPI,Props>(function GalleryViewer(props,ref){
  const {NODE,pointAt,routeLength}=buildingNavigation(props.building),POIS=props.building.pois;
  const hostRef=useRef<HTMLDivElement>(null), runtime=useRef<Runtime|null>(null),cb=useRef(props);cb.current=props;
@@ -23,18 +26,21 @@ const GalleryViewer=forwardRef<ViewerAPI,Props>(function GalleryViewer(props,ref
   const r=runtime.current;if(!r)return;
   for(const group of [r.paths,r.markers]){while(group.children.length){const c=group.children[0] as THREE.Mesh;group.remove(c);c.geometry?.dispose();if(c.material&&!Array.isArray(c.material))c.material.dispose();}}
   const ids=cb.current.path??[];
-  ids.slice(1).forEach((id,i)=>{const a=NODE[ids[i]],b=NODE[id];if(!a||!b)return;const p1=new THREE.Vector3(a.x,a.y+.12,a.z),p2=new THREE.Vector3(b.x,b.y+.12,b.z),delta=p2.clone().sub(p1);const line=new THREE.Mesh(new THREE.CylinderGeometry(.10,.10,delta.length(),8),new THREE.MeshBasicMaterial({color:0x64e6f5}));line.position.copy(p1.clone().add(p2).multiplyScalar(.5));line.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());r.paths.add(line);
-   const arrow=new THREE.Mesh(new THREE.ConeGeometry(.36,.8,3),new THREE.MeshBasicMaterial({color:0x98f0ff}));arrow.position.copy(p1.clone().lerp(p2,.6));arrow.position.y+=.04;arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),p2.clone().sub(p1).normalize());r.paths.add(arrow);
+  ids.slice(1).forEach((id,i)=>{const a=NODE[ids[i]],b=NODE[id];if(!a||!b)return;const p1=new THREE.Vector3(a.x,a.y+.035,a.z),p2=new THREE.Vector3(b.x,b.y+.035,b.z),delta=p2.clone().sub(p1),length=delta.length();if(length<.001)return;const forward=delta.clone().normalize(),side=new THREE.Vector3(forward.z,0,-forward.x).normalize();
+   const ribbon=new THREE.BufferGeometry().setFromPoints([p1.clone().addScaledVector(side,.022),p1.clone().addScaledVector(side,-.022),p2.clone().addScaledVector(side,.022),p2.clone().addScaledVector(side,-.022)]);ribbon.setIndex([0,1,2,2,1,3]);r.paths.add(new THREE.Mesh(ribbon,new THREE.MeshBasicMaterial({color:0x64e6f5,side:THREE.DoubleSide,transparent:true,opacity:.6})));
+   for(let d=.7;d<length-.25;d+=2.8){const tip=p1.clone().addScaledVector(forward,d);for(const sign of [-1,1]){const tail=tip.clone().addScaledVector(forward,-.23).addScaledVector(side,.16*sign),edge=tip.clone().sub(tail);const arrow=new THREE.Mesh(new THREE.CylinderGeometry(.017,.017,edge.length(),5),new THREE.MeshBasicMaterial({color:0x98f0ff}));arrow.position.copy(tail.add(tip).multiplyScalar(.5));arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),edge.normalize());r.paths.add(arrow);}}
   });
-  for(const [id,color] of [[cb.current.confirmed,0x67e2ef],[cb.current.destination,0xffaa66]] as const){if(!id||!NODE[id])continue;const n=NODE[id];const ring=new THREE.Mesh(new THREE.TorusGeometry(.55,.13,8,32),new THREE.MeshBasicMaterial({color}));ring.rotation.x=Math.PI/2;ring.position.set(n.x,n.y+.22,n.z);r.markers.add(ring);}
+  for(const [id,color] of [[cb.current.confirmed,0x67e2ef],[cb.current.destination,0xffaa66]] as const){if(!id||!NODE[id])continue;const n=NODE[id];const ring=new THREE.Mesh(new THREE.TorusGeometry(.40,.025,6,32),new THREE.MeshBasicMaterial({color}));ring.rotation.x=Math.PI/2;ring.position.set(n.x,n.y+.04,n.z);r.markers.add(ring);}
  };
  useImperativeHandle(ref,()=>({
   overview:()=>runtime.current?.overview(),focus:(n,h)=>runtime.current?.focus(n,h),
+  setView:(mode,node,heading)=>{const r=runtime.current;if(!r)return;if(r.animation){r.mode=mode;r.controls.enabled=false;}else if(mode==='overview')r.overview();else r.focus(node,heading);},
+  setRate:rate=>{const r=runtime.current;if(r?.animation)r.animation.clock=rateClock(r.animation.clock,rate,performance.now());},
   snapshot:(id,h)=>{
    const r=runtime.current;if(!r||!NODE[id])return '';const n=NODE[id],a=HEADINGS.find(x=>x.id===h)!.angle*Math.PI/180;const c=new THREE.PerspectiveCamera(75,16/9,.1,250);c.position.set(n.x,n.y+1.65,n.z);c.lookAt(n.x+Math.sin(a)*6,n.y+1.6,n.z+Math.cos(a)*6);
    const previousRoof=r.roof?.visible,oldSize=r.renderer.getSize(new THREE.Vector2()),oldRatio=r.renderer.getPixelRatio(),oldClips=r.renderer.clippingPlanes,oldLabels=r.labels.map(l=>l.visible);r.labels.forEach(l=>l.visible=NODE[l.userData.nodeId].floor===n.floor);r.renderer.clippingPlanes=[];if(r.roof)r.roof.visible=true;r.renderer.setPixelRatio(1);r.renderer.setSize(480,270,false);r.renderer.render(r.scene,c);const image=r.renderer.domElement.toDataURL('image/jpeg',.86);r.renderer.setPixelRatio(oldRatio);r.renderer.setSize(oldSize.x,oldSize.y,false);r.renderer.clippingPlanes=oldClips;r.labels.forEach((l,i)=>l.visible=oldLabels[i]);if(r.roof)r.roof.visible=!!previousRoof;r.renderer.render(r.scene,r.camera);return image;
   },
-  play:(nodes)=>{const r=runtime.current;if(!r||nodes.length<2||r.recorder)return;r.mode='inside';r.renderer.clippingPlanes=[];r.controls.enabled=false;if(r.roof)r.roof.visible=true;r.camera.fov=75;r.camera.updateProjectionMatrix();const now=performance.now(),clock=playClock(r.animation?.clock??null,nodes.join('|'),Math.min(40000,Math.max(9000,routeLength(nodes)/4*1000)),now);r.animation={nodes:[...nodes],clock,last:0};cb.current.onProgress?.(progressAt(clock,now),true);},
+  play:(nodes)=>{const r=runtime.current;if(!r||nodes.length<2||r.recorder)return;r.controls.enabled=false;const now=performance.now(),clock=playClock(r.animation?.clock??null,nodes.join('|'),Math.min(40000,Math.max(9000,routeLength(nodes)/4*1000)),now,cb.current.rate);r.animation={nodes:[...nodes],clock,last:0};cb.current.onProgress?.(progressAt(clock,now),true);},
   pause:()=>{const r=runtime.current;if(!r?.animation||r.recorder)return;r.animation.clock=pauseClock(r.animation.clock,performance.now());cb.current.onProgress?.(progressAt(r.animation.clock,performance.now()),false);},
   stop:()=>runtime.current?.stop(),
   record:(nodes)=>new Promise((resolve,reject)=>{
@@ -43,11 +49,12 @@ const GalleryViewer=forwardRef<ViewerAPI,Props>(function GalleryViewer(props,ref
    const mime=['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t));if(!mime)return reject(new Error('此浏览器没有可用的视频编码器。'));
    r.stop();const stream=r.renderer.domElement.captureStream(30);let rec:MediaRecorder;try{rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:4500000});}catch(e){stream.getTracks().forEach(t=>t.stop());return reject(e);}
    const chunks:BlobPart[]=[];let completed=false;r.recorder=rec;rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};rec.onerror=()=>reject(new Error('视频编码失败，请重试。'));rec.onstop=()=>{stream.getTracks().forEach(t=>t.stop());r.recorder=null;if(completed)resolve({blob:new Blob(chunks,{type:mime}),extension:mime.startsWith('video/mp4')?'mp4':'webm'});else reject(new Error('视频导出已取消。'));};
-   r.mode='inside';r.renderer.clippingPlanes=[];r.controls.enabled=false;if(r.roof)r.roof.visible=true;r.camera.fov=75;r.camera.updateProjectionMatrix();rec.start(200);r.animation={nodes,clock:playClock(null,nodes.join('|'),18000,performance.now()),last:0,done:()=>{completed=true;rec.stop();}};cb.current.onProgress?.(0,true);
+   r.controls.enabled=false;rec.start(200);r.animation={nodes:[...nodes],clock:playClock(null,nodes.join('|'),18000,performance.now(),cb.current.rate),last:0,done:()=>{completed=true;rec.stop();}};cb.current.onProgress?.(0,true);
   })
  }),[]);
  useEffect(()=>{applyPath();},[props.path,props.confirmed,props.destination]);
- useEffect(()=>{const r=runtime.current;if(r?.mode==='overview')r.overview();},[props.floor]);
+ useEffect(()=>{const r=runtime.current;if(r?.mode==='overview'&&!r.animation)r.overview();},[props.floor]);
+ useEffect(()=>{const r=runtime.current;if(!r)return;r.guide.dispose();r.guide=createGuide(props.guide);r.guide.root.visible=false;r.scene.add(r.guide.root);},[props.guide]);
  useEffect(()=>{
   const host=hostRef.current;if(!host)return;let renderer:THREE.WebGLRenderer;
   try{renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});}catch{cb.current.onError?.('三维显示暂不可用，请开启浏览器硬件加速；平面路线仍可使用。');return;}
@@ -56,8 +63,9 @@ const GalleryViewer=forwardRef<ViewerAPI,Props>(function GalleryViewer(props,ref
   const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=8;controls.maxDistance=200;controls.maxPolarAngle=Math.PI*.47;
   scene.add(new THREE.HemisphereLight(0xcdeaff,0x263d55,1.5));const sun=new THREE.DirectionalLight(0xcceaff,1.8);sun.position.set(-15,30,-8);scene.add(sun);
   const paths=new THREE.Group(),markers=new THREE.Group();scene.add(paths,markers);const grid=new THREE.GridHelper(120,60,0x31566c,0x173041);grid.position.y=-.08;scene.add(grid);
-  const r:Runtime={scene,camera,renderer,controls,roof:null,paths,markers,labels:[],mode:'overview',animation:null,recorder:null,
-   stop:()=>{r.animation=null;if(r.recorder?.state==='recording')r.recorder.stop();cb.current.onProgress?.(0,false);},
+  const guide=createGuide(cb.current.guide);guide.root.visible=false;scene.add(guide.root);
+  const r:Runtime={scene,camera,renderer,controls,roof:null,paths,markers,guide,labels:[],mode:'overview',animation:null,recorder:null,
+   stop:()=>{r.animation=null;r.guide.root.visible=false;camera.up.set(0,1,0);if(r.recorder?.state==='recording')r.recorder.stop();cb.current.onProgress?.(0,false);},
    overview:()=>{r.stop();r.mode='overview';if(r.roof)r.roof.visible=false;const building=cb.current.building,floor=building.floors.find(f=>f.id===cb.current.floor),b=building.bounds,cx=(b.x1+b.x2)/2,cz=(b.z1+b.z2)/2,scale=Math.max(b.x2-b.x1,b.z2-b.z1)/60;renderer.clippingPlanes=building.adapter==='standard'&&floor?[new THREE.Plane(new THREE.Vector3(0,-1,0),floor.y+3.2)]:[];r.labels.forEach(s=>s.visible=!floor||NODE[s.userData.nodeId].floor===floor.id);camera.fov=48;camera.position.set(cx+36*scale,56*scale,cz-61*scale);camera.updateProjectionMatrix();controls.enabled=true;controls.target.set(cx,floor?.y??0,cz);controls.update();},
    focus:(id,h)=>{if(!NODE[id])return;r.stop();r.mode='inside';renderer.clippingPlanes=[];r.labels.forEach(s=>s.visible=true);controls.enabled=false;if(r.roof)r.roof.visible=true;const n=NODE[id],a=HEADINGS.find(x=>x.id===h)!.angle*Math.PI/180;camera.fov=75;camera.position.set(n.x,n.y+1.65,n.z);camera.lookAt(n.x+Math.sin(a)*8,n.y+1.65,n.z+Math.cos(a)*8);camera.updateProjectionMatrix();}
   };runtime.current=r;r.overview();
@@ -84,7 +92,20 @@ const GalleryViewer=forwardRef<ViewerAPI,Props>(function GalleryViewer(props,ref
   const resize=()=>{const w=Math.max(host.clientWidth,1),h=Math.max(host.clientHeight,1);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);};const observer=new ResizeObserver(resize);observer.observe(host);resize();
   const raycaster=new THREE.Raycaster();let down={x:0,y:0};const pointerDown=(e:PointerEvent)=>{down={x:e.clientX,y:e.clientY};};const pointerUp=(e:PointerEvent)=>{if(Math.hypot(e.clientX-down.x,e.clientY-down.y)>6||r.animation)return;const rect=renderer.domElement.getBoundingClientRect();raycaster.setFromCamera(new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1),camera);const hit=raycaster.intersectObjects(r.labels)[0];if(hit)cb.current.onPick?.(hit.object.userData.nodeId);};renderer.domElement.addEventListener('pointerdown',pointerDown);renderer.domElement.addEventListener('pointerup',pointerUp);
   renderer.setAnimationLoop(now=>{
-   if(r.animation&&r.animation.clock.since!==null){const a=r.animation,p=progressAt(a.clock,now),point=pointAt(a.nodes,p),ahead=pointAt(a.nodes,Math.min(1,p+.006));camera.position.set(point.x,point.y+1.65,point.z);const visibleFloor=cb.current.building.floors.filter(f=>f.y<=point.y+.3).at(-1)?.id;r.labels.forEach(l=>l.visible=NODE[l.userData.nodeId].floor===visibleFloor);if(p<.999)camera.lookAt(ahead.x,ahead.y+1.65,ahead.z);if(now-a.last>100){cb.current.onProgress?.(p,true);a.last=now;}if(p>=1){a.clock=pauseClock(a.clock,now);cb.current.onProgress?.(1,false);a.done?.();}}
+   if(r.animation){
+    const a=r.animation,p=progressAt(a.clock,now),length=routeLength(a.nodes),pose=routePresentation(a.nodes,p,length,pointAt),{point}=pose,running=a.clock.since!==null;
+    const visibleFloor=cb.current.building.floors.filter(f=>f.y<=point.y+.3).at(-1);r.labels.forEach(l=>l.visible=NODE[l.userData.nodeId].floor===visibleFloor?.id);
+    const top=r.mode==='overview';if(r.roof)r.roof.visible=!top;
+    r.renderer.clippingPlanes=top?[new THREE.Plane(new THREE.Vector3(0,-1,0),(visibleFloor?.y??point.y)+2)]:[];
+    camera.fov=top?50:75;camera.up.set(0,top?0:1,top?1:0);
+    if(top){camera.position.set(point.x,point.y+Math.max(26,20/camera.aspect),point.z-.01);camera.lookAt(point.x,point.y,point.z);}
+    else {camera.position.set(point.x,point.y+1.65,point.z);camera.lookAt(point.x+Math.sin(pose.heading)*3,point.y+1.5,point.z+Math.cos(pose.heading)*3);}
+    camera.updateProjectionMatrix();
+    r.guide.root.visible=cb.current.guide.style!=='ground'&&(top||Math.hypot(pose.guide.x-point.x,pose.guide.z-point.z)>.55);
+    r.guide.root.position.set(pose.guide.x,pose.guide.y,pose.guide.z);r.guide.root.rotation.y=pose.guideHeading;r.guide.pose(pose.guideProgress*length,running&&pose.guideProgress<1);
+    if(running&&now-a.last>100){cb.current.onProgress?.(p,true);a.last=now;}
+    if(running&&p>=1){a.clock=pauseClock(a.clock,now);cb.current.onProgress?.(1,false);a.done?.();}
+   }
    else if(r.mode==='overview')controls.update();
    renderer.render(scene,camera);
   });

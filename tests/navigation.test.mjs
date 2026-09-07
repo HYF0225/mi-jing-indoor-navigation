@@ -5,7 +5,32 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { BUILDINGS, GALLERY } from '../app/buildings.ts';
 import { buildingNavigation, validateBuilding } from '../app/building-navigation.ts';
-import { playClock, pauseClock, progressAt } from '../app/playback.ts';
+import { playClock, pauseClock, progressAt, rateClock, PLAYBACK_RATES } from '../app/playback.ts';
+import {routePresentation,DEFAULT_GUIDE} from '../app/route-presentation.ts';
+import {createGuide} from '../app/guide-avatar.ts';
+
+test('live speed changes preserve progress, including paused and completed clocks',()=>{
+ for(const rate of PLAYBACK_RATES){
+  let c=playClock(null,'route',10000,0);c=rateClock(c,rate,2000);
+  assert.equal(progressAt(c,2000),.2);assert.ok(Math.abs(progressAt(c,3000)-(.2+rate/10))<1e-9);
+  c=pauseClock(c,3000);const held=progressAt(c,3000);c=rateClock(c,4,8000);
+  assert.equal(progressAt(c,100000),held);assert.equal(c.since,null);
+  c=playClock(c,'route',10000,100000);assert.ok(Math.abs(progressAt(c,100500)-(held+.2))<1e-9);
+ }
+ let c=playClock(null,'route',1000,0,4);assert.equal(progressAt(c,300),1);
+ c=rateClock(pauseClock(c,300),.5,500);assert.equal(progressAt(c,9000),1);
+ assert.equal(progressAt(playClock(c,'route',1000,9000,.5),10000),.5);
+ assert.equal(rateClock(c,NaN,9000).rate,1);
+});
+test('view presentation leaves clock untouched and companion stays on all building route polylines',()=>{
+ for(const b of BUILDINGS){const nav=buildingNavigation(b),route=nav.findRoutes(b.entry,b.destination)[0],length=nav.routeLength(route.nodes),clock=playClock(null,'route',10000,0),saved=JSON.stringify(clock);
+  for(let i=0;i<=100;i++){const p=i/100,pose=routePresentation(route.nodes,p,length,nav.pointAt);assert.deepEqual(pose.point,nav.pointAt(route.nodes,p));assert.deepEqual(pose.guide,nav.pointAt(route.nodes,pose.guideProgress));assert.ok(pose.guideProgress>=p&&pose.guideProgress<=1);assert.ok((pose.guideProgress-p)*length<=2.000001);assert.ok(Number.isFinite(pose.heading)&&Number.isFinite(pose.guideHeading));}
+  assert.equal(JSON.stringify(clock),saved);assert.deepEqual(routePresentation(route.nodes,1,length,nav.pointAt).guide,nav.pointAt(route.nodes,1));
+ }
+});
+test('avatar variants construct, animate and release original geometry',()=>{
+ for(const style of ['woman','man'])for(const hair of ['long','short']){const avatar=createGuide({...DEFAULT_GUIDE,style,hair});assert.ok(avatar.root.children.length>10);avatar.pose(3,true);avatar.pose(3,false);avatar.root.traverse(o=>{assert.ok(o.position.toArray().every(Number.isFinite));assert.ok(o.rotation.toArray().slice(0,3).every(Number.isFinite));});avatar.dispose();}
+});
 
 test('pause/resume retains progress and excludes all paused wall time',()=>{
  let c=playClock(null,'gallery/routeA',10000,1000);
@@ -23,7 +48,7 @@ test('new route, explicit reset and replay after completion start at zero',()=>{
  assert.equal(progressAt(playClock(c,'a',10000,14000),14000),0);
 });
 test('all building packages have valid independent endpoints and floor connectors',()=>{
- assert.equal(BUILDINGS.length,2);
+ assert.equal(BUILDINGS.length,3);
  for(const b of BUILDINGS){assert.deepEqual(validateBuilding(b),[]);const n=buildingNavigation(b);assert.ok(n.findRoutes(b.entry,b.destination).length);}
  assert.equal(buildingNavigation(BUILDINGS[1]).findRoutes('entry','exit').length,0);
  assert.equal(buildingNavigation(GALLERY).findRoutes('f1_010','f3_044').length,0);
