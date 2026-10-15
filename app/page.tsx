@@ -85,7 +85,7 @@ function NavigationWorkspace({building,onBuildingChange}:{building:Building;onBu
  function toggleClosure(value:boolean){stop();setClosed(value);setSelected(null);if(confirmed&&active){setStart(confirmed);setStep(0);}setMessage(value?'已模拟关闭'+building.closure.name+'，路线已重新计算。':'测试通道已恢复。');log(value?'模拟封路：'+building.closure.name:'解除模拟封路');}
  const current=confirmed?NODE[confirmed]:null;
  return <main className="nav-app">
-  <header className="app-header"><div className="brand-mark"><Compass size={25}/></div><div><h1>觅径 <span>室内导航实验室</span></h1><p>在关键路口，确认下一步。</p></div><span className="demo-badge">{BUILDINGS.length} 栋建筑 · 交互演示</span><Button variant="ghost" size="icon" aria-label="查看模型来源与测试范围" onClick={()=>setAbout(true)}><Info size={20}/></Button></header>
+  <header className="app-header"><div className="brand-mark"><Compass size={25}/></div><div><h1>觅径 <span>室内导航实验室</span></h1><p>在关键路口，确认下一步。</p></div><a href={publicAsset('/campus-preview/')} style={{color:'#158d9d',fontWeight:700}}>校园模型 · 新预览 ↗</a><span className="demo-badge">{BUILDINGS.length} 栋建筑 · 交互演示</span><Button variant="ghost" size="icon" aria-label="查看模型来源与测试范围" onClick={()=>setAbout(true)}><Info size={20}/></Button></header>
   <div className="workspace">
    <aside className="side-panel">
     <div className="building-picker"><label htmlFor="building-select">先选择建筑</label><Select value={building.id} disabled={recording} onValueChange={v=>{if(v&&v!==building.id){stop();onBuildingChange(v);}}}><SelectTrigger id="building-select" className="w-full"><SelectValue>{building.name}</SelectValue></SelectTrigger><SelectContent>{BUILDINGS.map(b=><SelectItem key={b.id} value={b.id}>{b.name} · {b.floors.length} 层</SelectItem>)}</SelectContent></Select></div>

@@ -14,5 +14,5 @@ export default defineConfig({
  resolve:{alias:{'@':directory}},
  css:{postcss:{plugins:[tailwindcss()]}},
  define:{'process.env.NEXT_PUBLIC_BASE_PATH':JSON.stringify(basePath)},
- build:{outDir:directory+'pages-dist',emptyOutDir:true},
+ build:{outDir:directory+'pages-dist',emptyOutDir:true,rollupOptions:{input:{navigation:directory+'pages-app/index.html',campus:directory+'pages-app/campus-preview/index.html'}}},
 });

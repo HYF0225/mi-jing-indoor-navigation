@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="theme-color" content="#f5f8f7"/><title>港大校园模型 · 觅径</title></head>
+<body>
+<header><a class="brand" href="../">觅径 <span>校园空间实验室</span></a><a href="../" class="back">原版导航演示 ↗</a></header>
+<main>
+ <aside>
+  <p class="eyebrow">HKU · CAMPUS EXPLORER</p>
+  <h1>先认识校园，<br/>再找到方向。</h1>
+  <p class="intro">香港大学本部及百周年校园<br/>现有资料模型 · 2026.10.15 发布</p>
+  <div class="badge">资料预览 · 非完整实地导航</div>
+  <section><h2>看一看校园</h2><div class="view-buttons"><button data-view="overview" aria-pressed="true">斜视总览</button><button data-view="top" aria-pressed="false">正上方</button><button data-view="east" aria-pressed="false">从东侧看</button><button data-view="west" aria-pressed="false">从西侧看</button></div></section>
+  <section><h2>快速找到建筑</h2><label for="landmark">资料中已对应的主要地标</label><select id="landmark" disabled><option value="">选择一栋建筑…</option></select><p id="selection" class="small">建筑名称为校园图与模型的候选对应，入口尚未核验。</p></section>
+  <section><h2>图层</h2><label class="toggle"><input type="checkbox" id="paths"/>显示原始步行网络</label><label class="toggle"><input type="checkbox" id="xray" checked/>透视显示路段（含遮挡路段）</label><div class="legend"><span><i class="blue"></i>步道</span><span><i class="green"></i>桥梁</span><span><i class="orange"></i>跨层连接</span></div><p class="small">线条是来源数据的中心线，不代表道路宽度；路段未全部核实连通或开放。</p></section>
+  <details><summary>数据来源与完成范围</summary><p>外观、地形：香港特别行政区政府地政总署 CSDI 3D-BIT00。保留来源照片纹理；无纹理建筑仅使用示意颜色。模型年份不一，部分建筑缺失或身份待核实。</p><p>步行线：地政总署三维行人网络。未把房间、走廊或门的位置虚构到模型里，也未将独立平面图强行叠加到校园。</p><p>网页版对周边显示范围作裁切、贴图压缩；Blender 原件未改。</p><a href="https://portal.csdi.gov.hk/csdi-webpage/dataset/landsd_rcd_1637306559892_42396" target="_blank" rel="noreferrer">模型来源 ↗</a> · <a href="https://portal.csdi.gov.hk/csdi-webpage/doc/TNC" target="_blank" rel="noreferrer">使用条款 ↗</a></details>
+ </aside>
+ <section class="scene" aria-label="可交互的港大三维校园模型">
+  <div id="canvas"></div>
+  <div class="scene-heading"><span class="live-dot"></span><span id="view-name">校园 · 斜视总览</span><span class="north" id="north">N ↑ 北</span></div>
+  <div id="loading" role="status"><div class="spinner"></div><strong id="load-title">正在加载校园模型</strong><span id="load-detail">首次加载需要下载模型及照片纹理</span><button id="retry" hidden>重新加载</button></div>
+  <div class="tools"><button id="pan" aria-pressed="false" title="开启后左键拖动平移">✋ 平移</button><button id="zoom-in" aria-label="放大">＋</button><button id="zoom-out" aria-label="缩小">−</button><button id="reset">回到总览</button></div>
+  <div class="hint">拖动旋转 · 右键 / 双指平移 · 滚轮缩放<br/><span>所有视角均可自由移动 · 本页不读取或显示你的实时位置</span></div>
+  <div id="stats" role="status"></div>
+ </section>
+</main>
+<footer>© Hong Kong SAR Government, Lands Department. Source: CSDI Portal / 3D-BIT00. Source IP ownership retained. <span>模型预览，不作为现场通行依据。</span></footer>
+<script type="module" src="./main.ts"></script>
+</body></html>
